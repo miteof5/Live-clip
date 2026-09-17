@@ -40,6 +40,45 @@
   - 硅基流动：环境变量 `SILICONFLOW_API_KEY`（`FunAudioLLM/Whisper-large-v3-turbo`）
 - pyJianYingDraft（草稿生成）
 
+## 二进制工具（不入库，clone 后需手动放置）
+
+以下两个工具是**运行时必需**的，但因体积大 / 属于本地环境（Windows），**未纳入 git 仓库**。
+`git clone` 后需要按本节约定放置，否则对应功能不可用。
+
+### 1. ffmpeg / ffprobe（视频处理必需）
+
+- **用途**：抽音频、静音检测、TS→MP4 转码、视频探测。几乎每个步骤都需要。
+- **要求**：完整版（需含 `libx264` / `libmp3lame`），系统 PATH 里的精简版可能缺编码器。
+- **获取**：
+  - 从 ffmpeg 官网（https://ffmpeg.org/download.html ，Windows 选 "gyan.dev" 或 "BtbN" 构建）下载完整版；或
+  - 直接用本机剪映安装目录自带的可执行文件（探测逻辑会自动找）。
+- **放置**（推荐）：
+  ```
+  tools/ffmpeg/ffmpeg.exe
+  tools/ffmpeg/ffprobe.exe
+  ```
+- **配置**：`config.json` 的 `ffmpeg_path` / `ffprobe_path` 指向即可；留空时自动探测顺序为
+  **config 显式值 → PATH → 剪映安装目录**（自动取版本号最大者）。
+
+### 2. jy-draftc（读取/解密用户精修后的剪映草稿，可选）
+
+- **用途**：剪映 6.0+ 保存的草稿 `draft_content.json` 是加密的，本工具解密后用于
+  "学习"用户的样式与剪法（样式传承）。不做这一步也可以正常生成草稿。
+- **获取**：https://github.com/wenshui330/jy-draftc 的 release 下载预编译 exe
+  （或用其 JYDraftPort.exe 内嵌版）。
+- **放置**：
+  ```
+  tools/jy-draftc.exe
+  ```
+- **配置**：`tools/.env` 写入剪映安装目录（含 `videoeditor.dll`），**UTF-8 无 BOM**：
+  ```
+  JY_INSTALL_DIR=C:\你的剪映安装目录
+  ```
+  代码会自动探测：环境变量 `JY_INSTALL_DIR` → `tools/.env` → `LOCALAPPDATA\JianyingPro\Apps`。
+
+> 注意：`tools/.env` 已入版本库（只含路径，不含密钥）；`tools/ffmpeg/*.exe` 与
+> `tools/jy-draftc.exe` 已被 `.gitignore` 排除，clone 后不会出现，请按上面放置。
+
 ## 配置
 
 复制 `config.json.example` 为 `config.json`（或直接使用现成 config.json）：
