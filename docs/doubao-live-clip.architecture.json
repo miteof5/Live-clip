@@ -1,0 +1,54 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {
+    "title": "doubao-live-clip · 直播切片自动剪辑工具",
+    "locale": "zh-CN",
+    "quality_profile": "showcase",
+    "views": [
+      { "id": "main-path", "label": "主流程", "focus": ["user", "doubao", "edl", "cli", "draft-builder", "jianying"], "note": "从导演指令到剪映草稿：判断层产出 EDL v2，工具层执行。" },
+      { "id": "media-pipeline", "label": "媒体管线", "focus": ["probe", "preprocess", "transcribe", "merge", "doubao"], "note": "直播录像 → 词级转写文本，供判断层阅读。" },
+      { "id": "speaker-track", "label": "说话人维度", "focus": ["speaker"], "note": "音频分离 + 视觉绑定，通过 enrich_edl 给 EDL 填充 speaker_id / dialogue_zoom。" }
+    ]
+  },
+  "components": [
+    { "id": "probe", "type": "backend", "label": "probe", "sublabel": "视频探测", "pos": [60, 45], "size": [140, 60] },
+    { "id": "preprocess", "type": "backend", "label": "preprocess", "sublabel": "抽音频 + 静音检测", "pos": [300, 45], "size": [150, 60] },
+    { "id": "transcribe", "type": "backend", "label": "transcribe", "sublabel": "ASR 词级时间戳", "pos": [550, 45], "size": [150, 60] },
+    { "id": "merge", "type": "backend", "label": "merge_words", "sublabel": "词 → 短语 + SRT", "pos": [800, 45], "size": [150, 60] },
+    { "id": "speaker", "type": "backend", "label": "说话人维度", "sublabel": "分离 + 视觉绑定 + 富化", "pos": [800, 165], "size": [150, 66] },
+    { "id": "edl", "type": "backend", "label": "edl.py", "sublabel": "NormalizedEDL · v2", "pos": [500, 275], "size": [150, 60], "tag": "★" },
+    { "id": "user", "type": "external", "label": "用户（导演）", "sublabel": "决定剪什么 / 留什么", "pos": [60, 395], "size": [140, 66] },
+    { "id": "doubao", "type": "external", "label": "豆包（剪辑师）", "sublabel": "LLM 判断层：读转写 → 产 EDL", "pos": [300, 395], "size": [150, 76] },
+    { "id": "cli", "type": "backend", "label": "scripts CLI", "sublabel": "主入口 + 3 个子命令脚本", "pos": [550, 395], "size": [160, 84] },
+    { "id": "draft-builder", "type": "backend", "label": "draft_builder", "sublabel": "草稿生成唯一核心", "pos": [800, 395], "size": [160, 84], "tag": "★" },
+    { "id": "jianying", "type": "external", "label": "剪映 JianyingPro", "sublabel": "草稿目录（明文 JSON）", "pos": [1050, 395], "size": [150, 70] },
+    { "id": "ffmpeg", "type": "cloud", "label": "ffmpeg", "sublabel": "tools/ffmpeg 完整版", "pos": [1050, 45], "size": [150, 60] },
+    { "id": "asr-api", "type": "cloud", "label": "ASR API", "sublabel": "百炼 / 硅基流动", "pos": [550, 165], "size": [150, 60] },
+    { "id": "styles", "type": "backend", "label": "styles", "sublabel": "样式参数唯一真源", "pos": [880, 515], "size": [150, 60] }
+  ],
+  "boundaries": [
+    { "kind": "region", "label": "判断层（不在仓库内）", "wraps": ["user", "doubao"] },
+    { "kind": "region", "label": "scripts CLI", "wraps": ["cli"] },
+    { "kind": "region", "label": "liveclip 工具层", "wraps": ["probe", "preprocess", "transcribe", "merge", "speaker", "edl", "draft-builder", "styles"] }
+  ],
+  "connections": [
+    { "id": "user-to-doubao", "from": "user", "to": "doubao", "label": "剪辑指令", "variant": "emphasis" },
+    { "id": "doubao-to-edl", "from": "doubao", "to": "edl", "label": "产出 v2", "variant": "emphasis", "fromSide": "bottom", "toSide": "left", "via": [[375, 505], [490, 505], [490, 305]], "labelAt": [432, 494] },
+    { "id": "edl-to-cli", "from": "edl", "to": "cli", "label": "读取", "variant": "emphasis", "fromSide": "right", "toSide": "top", "via": [[660, 305], [660, 375], [630, 375]], "labelAt": [685, 294] },
+    { "id": "cli-to-draft", "from": "cli", "to": "draft-builder", "label": "EDL + SRT", "variant": "emphasis" },
+    { "id": "draft-to-jianying", "from": "draft-builder", "to": "jianying", "label": "剪映草稿", "variant": "emphasis" },
+    { "id": "user-to-probe", "from": "user", "to": "probe", "label": "直播录像", "fromSide": "left", "toSide": "top", "via": [[20, 428], [20, 10], [130, 10]], "labelAt": [20, 220] },
+    { "id": "probe-to-preprocess", "from": "probe", "to": "preprocess", "label": "媒体信息" },
+    { "id": "preprocess-to-transcribe", "from": "preprocess", "to": "transcribe", "label": "audio.wav + 静音" },
+    { "id": "transcribe-to-merge", "from": "transcribe", "to": "merge", "label": "words.json" },
+    { "id": "transcribe-to-asr", "from": "transcribe", "to": "asr-api", "label": "音频块 POST", "fromSide": "bottom", "toSide": "top", "labelAt": [625, 135] },
+    { "id": "merge-to-doubao", "from": "merge", "to": "doubao", "label": "转写 / 短语文本", "fromSide": "right", "toSide": "top", "via": [[1020, 75], [1020, 265], [375, 265]], "labelAt": [697, 254] },
+    { "id": "styles-to-draft", "from": "styles", "to": "draft-builder", "label": "样式常量", "variant": "dashed", "fromSide": "top", "toSide": "bottom", "via": [[955, 490], [880, 490]], "labelAt": [917, 502] }
+  ],
+  "cards": [
+    { "dot": "cyan", "title": "判断层（仓库外）", "items": ["用户（导演）决定剪什么 / 留什么", "豆包 LLM 读转写，编排节奏 / 筛金句", "产出 EDL v2：keep / cut 区间 + 理由"] },
+    { "dot": "emerald", "title": "工具层 liveclip/", "items": ["确定性执行：探测 → 抽音频 → 转写 → 合并 → 落草稿", "NormalizedEDL 为 v2 唯一标准（兼容旧版）", "draft_builder 草稿唯一核心、styles 样式唯一真源；说话人字段由 enrich_edl 填充"] },
+    { "dot": "rose", "title": "关键契约与依赖", "items": ["判断层与渲染层只通过 EDL v2 JSON 通信", "ASR 多后端 fallback（百炼 / 硅基流动），换模型只改 config.json", "ffmpeg 在 tools/ffmpeg；剪映草稿加密可经 jy_draftc 解密学习"] }
+  ]
+}
