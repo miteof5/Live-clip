@@ -20,14 +20,16 @@
 2. preprocess   python scripts/run_pipeline.py preprocess --video input.mp4
                 → outputs/work/audio.wav + silences.json
 3. transcribe   python scripts/run_pipeline.py transcribe --audio outputs/work/audio.wav
-                → outputs/work/words.json（词级时间戳，硅基流动 whisper）
+                → outputs/work/words.json（词级时间戳，百炼/硅基流动 whisper）
 4. merge        python scripts/run_pipeline.py merge --words outputs/work/words.json
                 → outputs/work/phrases.json + source.srt
-5. （豆包/用户）读 words.json/phrases.json，产出 edl.json
+5. （豆包/用户）读 words.json/phrases.json，产出 edl.json（v2 格式，见下）
 6. draft        python scripts/run_pipeline.py draft --edl outputs/work/edl.json \
                   --draft-folder "<剪映草稿目录>"
                 → 剪映草稿文件夹（明文，不撞加密护栏）
 ```
+
+推荐草稿入口：`scripts/build_draft.py`（EDL + SRT → 草稿，支持多素材混排，见 AGENTS.md）。
 
 ## 依赖
 
@@ -59,25 +61,34 @@
 - `max_seconds` / `max_mb` 是该后端单次请求上限（百炼 flash 同步版 = 300s/10MB）。
 - 旧格式（`siliconflow_api_key` / `whisper_model` / `whisper_base_url`）仍兼容，自动回退为单后端。
 
-## EDL 格式（豆包判断输出）
+## EDL 格式（唯一标准 v2，判断层输出）
 
 ```json
 {
-  "source_path": "D:/input.mp4",
-  "width": 1920, "height": 1080, "source_duration_s": 3600.0, "fps": 30,
-  "title": "切片标题",
-  "segments": [
-    {"kind": "keep", "source_start": 0.0, "source_end": 12.5,
-     "reason": "开场金句", "is_golden": true, "text": "..."},
-    {"kind": "cut", "source_start": 12.5, "source_end": 20.0, "reason": "气口停顿"}
-  ]
+  "keep": [
+    {"source_start": 0.0, "source_end": 12.5, "target_start": 0.0,
+     "duration": 12.5, "video": "D:/input.mp4", "reason": "开场金句",
+     "is_golden": true, "text": "...", "speaker_id": 1, "dialogue_zoom": false},
+    {"source_start": 12.5, "source_end": 20.0, "target_start": 12.5, "duration": 7.5}
+  ],
+  "cut": [{"start": 20.0, "end": 22.0, "reason": "气口停顿"}],
+  "target_duration": 20.0,
+  "source_path": "D:/input.mp4", "width": 1920, "height": 1080,
+  "source_duration_s": 3600.0, "fps": 30, "title": "切片标题"
 }
 ```
+
+要点：
+- 只有 **keep 段列表**是必需；`target_duration` 缺失会自动重算；`duration` 与 `source_end` 任给其一
+- `video`：多素材混排时指定该段素材，缺省用顶层 `source_path`
+- 旧版 `{"segments": [...]}` 仍可读入（`NormalizedEDL` 自动识别），但不再产出
+- 说话人字段（`speaker_id`/`dialogue_zoom`/`speaker_switches`）由 `liveclip/enrich_edl.py` 填充
 
 ## 测试
 
 ```bash
-python tests/test_core.py
+.venv\Scripts\python.exe -m pytest tests\ -q
+# 或逐个手动跑：python tests\test_core.py
 ```
 
 ## 里程碑

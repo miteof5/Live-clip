@@ -7,9 +7,16 @@
 用途：用户在剪映里手动精修草稿后，剪映以加密格式保存；本模块解密读回，
 用于"学习"用户的样式/剪辑修改（样式传承、剪法沉淀）。
 
-exe 获取方式（二选一）：
-  1. 网络恢复后下载 jy-draftc release 的预编译 exe（或 jy-draft-port 的 JYDraftPort.exe 内嵌）
-  2. 本机安装 MSYS2 MinGW-w64 后用 scripts/build-native.ps1 编译
+工具定位（自动探测顺序）：
+  1. 环境变量 JY_DRAFTC_PATH
+  2. PATH
+  3. 项目自带 tools/jy-draftc.exe（本仓库标准位置）
+  4. LOCALAPPDATA\\JYDraftPort\\jy-draftc.exe / ~/.local/bin/jy-draftc.exe
+
+剪映安装目录（自动探测顺序）：
+  1. 环境变量 JY_INSTALL_DIR
+  2. 项目 tools/.env 的 JY_INSTALL_DIR（UTF-8 无 BOM，key=value 格式）
+  3. LOCALAPPDATA\\JianyingPro\\Apps（取版本号最新）
 """
 from __future__ import annotations
 
@@ -20,15 +27,45 @@ import subprocess
 from pathlib import Path
 from typing import Any, Dict, Optional, Tuple
 
+from .config import PROJECT_ROOT
+
+
+def _load_tools_env() -> Dict[str, str]:
+    """读取 tools/.env（UTF-8 无 BOM，key=value，忽略 # 注释与空行）。
+
+    tools/.env 是本项目存放本地环境变量的标准位置（如 JY_INSTALL_DIR）。
+    """
+    env_path = PROJECT_ROOT / "tools" / ".env"
+    if not env_path.is_file():
+        return {}
+    out: Dict[str, str] = {}
+    try:
+        raw = env_path.read_text(encoding="utf-8")
+    except (UnicodeDecodeError, OSError):
+        return {}
+    for line in raw.splitlines():
+        line = line.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        k, _, v = line.partition("=")
+        k, v = k.strip(), v.strip()
+        if k and v:
+            out[k] = v
+    return out
+
 
 def find_exe() -> Optional[str]:
-    """查找 jy-draftc 可执行文件：环境变量 → PATH → 常见位置。"""
+    """查找 jy-draftc 可执行文件：环境变量 → PATH → 项目 tools/ → 常见位置。"""
     p = os.environ.get("JY_DRAFTC_PATH")
     if p and Path(p).is_file():
         return p
     p = shutil.which("jy-draftc")
     if p:
         return p
+    # 项目自带 tools/jy-draftc.exe（标准位置）
+    local = PROJECT_ROOT / "tools" / "jy-draftc.exe"
+    if local.is_file():
+        return str(local)
     for cand in [
         Path(os.environ.get("LOCALAPPDATA", "")) / "JYDraftPort" / "jy-draftc.exe",
         Path(os.environ.get("USERPROFILE", "")) / ".local" / "bin" / "jy-draftc.exe",
@@ -39,8 +76,16 @@ def find_exe() -> Optional[str]:
 
 
 def find_install_dir() -> Optional[str]:
-    """找含 videoeditor.dll 的剪映版本目录（JY_INSTALL_DIR 或自动探测）。"""
+    """找含 videoeditor.dll 的剪映版本目录。
+
+    顺序：环境变量 JY_INSTALL_DIR → tools/.env 的 JY_INSTALL_DIR
+    → LOCALAPPDATA\\JianyingPro\\Apps（取最新版本）。
+    """
     env = os.environ.get("JY_INSTALL_DIR")
+    if env and (Path(env) / "videoeditor.dll").is_file():
+        return env
+    tools_env = _load_tools_env()
+    env = tools_env.get("JY_INSTALL_DIR")
     if env and (Path(env) / "videoeditor.dll").is_file():
         return env
     base = Path(os.environ.get("LOCALAPPDATA", "")) / "JianyingPro" / "Apps"

@@ -11,15 +11,15 @@ from __future__ import annotations
 
 import argparse
 import json
+import sys
 from pathlib import Path
 
+# 允许从项目根直接运行 scripts/build_edl.py
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-def fmt_srt_time(sec: float) -> str:
-    ms = int(round(sec * 1000))
-    h, ms = divmod(ms, 3600_000)
-    m, ms = divmod(ms, 60_000)
-    s, ms = divmod(ms, 1000)
-    return f"{h:02d}:{m:02d}:{s:02d},{ms:03d}"
+from liveclip.merge_words import _fmt_ts  # noqa: E402
+
+fmt_srt_time = _fmt_ts  # 统一 SRT 时间戳格式化（唯一实现：liveclip.merge_words._fmt_ts）
 
 
 def build(phrases: list[dict], duration: float, *, pause_keep: float = 0.8, lead: float = 0.15) -> dict:

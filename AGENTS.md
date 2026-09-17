@@ -81,10 +81,11 @@ cd D:\myproj\doubao-live-clip
 .venv\Scripts\python.exe scripts\build_draft.py --edl outputs\work\edl.json --srt outputs\work\mapped.srt --video <原视频> --name "<草稿名>"
 ```
 
-### EDL 两种格式（勿混）
+### EDL 唯一标准格式（v2，勿再产出旧版）
 
-- **新版**（build_edl / 手动组装）：`{"keep": [{"source_start","target_start","duration","video"?}], "target_duration": N}`（`video` 字段=多素材混排）
-- **旧版**（EDL 对象 / run_pipeline draft）：`{"source_path","width","height","segments": [{"kind":"keep|cut","source_start","source_end","reason"}]}`
+- **唯一标准**：`{"keep": [{"source_start","source_end","target_start","duration","video"?}], "cut": [...], "target_duration": N}`
+- 旧版 `{"source_path","segments":[{"kind":"keep|cut"}]}` **已废弃**：只能被自动识别读入，不再产出
+- 说话人字段由 `python -m liveclip.enrich_edl --edl <v2 edl>.json --speaker bound_speaker_timeline.json` 填充
 
 ## 4. ASR 选型（重要，踩坑记录）
 
@@ -151,34 +152,36 @@ cd D:\myproj\doubao-live-clip
 ```
 doubao-live-clip/
 ├── liveclip/            # 核心库（唯一逻辑）
-│   ├── config.py        #   配置加载（config.json）
+│   ├── config.py        #   配置加载（config.json）+ find_ffmpeg 唯一实现
 │   ├── probe.py         #   视频探测
 │   ├── preprocess.py    #   抽音频+静音检测
 │   ├── transcribe.py    #   ASR 多后端（词级时间戳）
-│   ├── merge_words.py   #   词→短语
-│   ├── edl.py           #   EDL 数据模型（旧版格式）
+│   ├── merge_words.py   #   词→短语（含 SRT 时间戳格式化唯一实现 _fmt_ts）
+│   ├── edl.py           #   ⭐ EDL 统一模型（NormalizedEDL，v2 keep 格式唯一标准）
 │   ├── draft_builder.py #   ⭐ 草稿生成唯一核心
-│   ├── make_draft.py    #   旧 API 兼容层（委托 draft_builder）
-│   ├── jy_draftc.py     #   草稿解密封装
+│   ├── make_draft.py    #   兼容层（统一委托 draft_builder + NormalizedEDL）
+│   ├── jy_draftc.py     #   草稿解密封装（自动探测 tools\jy-draftc.exe + tools\.env）
 │   ├── styles.py        #   ⭐ 确定参数唯一真源
 │   ├── visual_signal.py        #   视觉信号层：人脸+跟踪+五维评分+区域（opencv）
 │   ├── speaker_diarization.py  #   说话人分离（paraformer-v2 异步）
 │   ├── speaker_binding.py      #   融合层：说话人↔画面位置绑定
 │   └── enrich_edl.py           #   EDL 说话人富化（speaker_id/dialogue_zoom）
-├── scripts/             # CLI 入口
+├── scripts/             # CLI 入口（正式）
 │   ├── run_pipeline.py  #   主入口（probe/preprocess/transcribe/merge/draft）
-│   ├── build_edl.py     #   自动剪静音 → EDL + mapped.srt
+│   ├── build_edl.py     #   自动剪静音 → v2 EDL + mapped.srt
 │   ├── judge_clips.py   #   判断表驱动（编辑 P1_JUDGE/P2_JUDGE）
 │   └── build_draft.py   #   ⭐ EDL+SRT → 草稿（推荐）
+├── scripts/scratch/     # 历史一次性调试脚本（_*.py，仅供回溯，勿当正式入口）
 ├── tools/
-│   ├── ffmpeg/          #   完整版 ffmpeg + ffprobe
-│   ├── jy-draftc.exe    #   剪映草稿解密/加密
-│   └── .env             #   JY_INSTALL_DIR（UTF-8 无 BOM）
+│   ├── ffmpeg/          #   完整版 ffmpeg + ffprobe（不入 git，本地保留）
+│   ├── jy-draftc.exe    #   剪映草稿解密/加密（不入 git，本地保留）
+│   └── .env             #   JY_INSTALL_DIR（UTF-8 无 BOM，jy_draftc 自动读取）
 ├── outputs/
 │   ├── work/            #   中间产物（words/phrases/judged/edl/srt）
 │   └── decrypted/       #   解密后的成品草稿 JSON
+├── tests/               # pytest（tests\test_*.py，运行：.venv\Scripts\python.exe -m pytest tests\ -q）
 ├── config.json          #   ASR 后端/阈值/路径配置
-└── docs/ARCHITECTURE.md #   架构设计稿（v1）
+└── docs/ARCHITECTURE.md #   架构设计稿
 ```
 
 ## 10. 说话人维度（音频主 + 视觉辅，2026-09-16 新增）

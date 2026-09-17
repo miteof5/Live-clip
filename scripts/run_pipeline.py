@@ -20,7 +20,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from liveclip import config as cfg  # noqa: E402
-from liveclip.edl import EDL  # noqa: E402
+from liveclip.edl import NormalizedEDL  # noqa: E402
 from liveclip.make_draft import DraftOptions, make_draft  # noqa: E402
 from liveclip.merge_words import merge_to_phrases, save_srt  # noqa: E402
 from liveclip.preprocess import Silence, detect_silence, extract_audio  # noqa: E402
@@ -155,7 +155,7 @@ def cmd_merge(args) -> int:
 
 
 def cmd_draft(args) -> int:
-    edl = EDL.load(args.edl)
+    edl = NormalizedEDL.load(args.edl)
     errors = edl.validate()
     if errors:
         print(json.dumps({"ok": False, "errors": errors}, ensure_ascii=False))
@@ -177,7 +177,7 @@ def cmd_draft(args) -> int:
             "draft_folder": draft_dir,
             "draft_name": opts.draft_name,
             "target_duration_s": round(edl.target_duration_s, 3),
-            "keep_segments": sum(1 for s in edl.segments if s.kind == "keep"),
+            "keep_segments": len(edl.keep),
         }, ensure_ascii=False))
         return 0
     except Exception as e:  # noqa: BLE001

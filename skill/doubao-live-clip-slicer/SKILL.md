@@ -75,9 +75,15 @@ ASR 选型（**踩坑记录，勿用错模型**）：
 7. **BGM 不用管**（用户自己加）；**标题每期必有**（主题标题贯穿全程）
 8. 花字（可选）：`(吐槽)` 弹幕式，替观众说话
 
-产出 EDL（支持两种格式，新版推荐）：
-- 新版：`{"keep": [{"source_start","target_start","duration","video"?}], "target_duration": N}`（video=多素材混排）
-- 旧版：EDL 对象 `{"source_path","segments":[{"kind","source_start","source_end","reason"}]}`
+产出 EDL（**唯一标准 v2 格式**）：
+```json
+{"keep": [{"source_start", "source_end", "target_start", "duration", "video"?,
+           "reason"?, "is_golden"?, "speaker_id"?, "dialogue_zoom"?}],
+ "cut": [{"start", "end", "reason"?}], "target_duration": N, ...}
+```
+- `duration` 与 `source_end` 任给其一；`target_duration` 缺失自动重算
+- `video`：多素材混排指定段素材，缺省用顶层 `source_path`
+- 旧版 `{"segments": [...]}` 已废弃（仅可读入，不再产出）
 
 **用判断表驱动时**：编辑 `scripts\judge_clips.py` 的 `P1_JUDGE`/`P2_JUDGE`：
 ```python

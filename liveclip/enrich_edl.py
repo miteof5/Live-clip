@@ -1,18 +1,18 @@
-"""enrich_edl.py — EDL/keep 列表说话人富化（判断层辅助）。
+"""enrich_edl.py — EDL 说话人富化（判断层辅助）。
 
-把 bound_speaker_timeline.json（融合层输出）合并进保留区间：
+把 bound_speaker_timeline.json（融合层输出）合并进 v2 标准 EDL：
 - 每个 keep 段：重叠时长最长的 speaker 为该段 speaker_id
 - dialogue_zoom：段内存在说话人切换（≥2 个不同 speaker 交替）→ True
   这是"谁说话放大谁"的镜头切换预标记
 - speaker_switches：段内切换点列表（判断层可据此下 dialogue_zoom 指令）
 
-支持两种输入格式：
-1. EDL dataclass 格式（liveclip.edl.EDL.to_dict）
-2. judged/merged 旧格式：{"keep": [{source_start, source_end, ...}], ...}
-   （当前判断层 judge_clips.py 输出格式）
+**输入格式（统一 v2）**：{"keep": [...], ...}。自动兼容：
+- 旧版 v1 {"segments": [...]}（EDL dataclass 格式）
+- judged 清单（[{keep, source_start, source_end, ...}]，判断层中间产物）→ 自动包装
+输出统一为 v2 格式（keep 段补 speaker_id / dialogue_zoom + 顶层 speaker_switches）。
 
 用法（CLI）：
-    python liveclip/enrich_edl.py --edl judged_P2.json --speaker bound_speaker_timeline.json
+    python liveclip/enrich_edl.py --edl merged_edl.json --speaker bound_speaker_timeline.json
 """
 from __future__ import annotations
 
@@ -24,11 +24,11 @@ from typing import Any, Dict, List, Optional, Tuple
 
 try:  # 模块方式
     from .config import load_config
-    from .edl import EDL, EDLSegment
+    from .edl import NormalizedEDL
 except ImportError:  # 直接运行
     sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
     from liveclip.config import load_config
-    from liveclip.edl import EDL, EDLSegment
+    from liveclip.edl import NormalizedEDL
 
 
 def _overlap(a_start: float, a_end: float, b_start: float, b_end: float) -> float:
@@ -78,17 +78,14 @@ def interval_speaker_stats(
     return main_spk, len(dur), switches
 
 
-# ---------------------------------------------------------------------------
-# 格式 1：EDL dataclass
-# ---------------------------------------------------------------------------
-def enrich_edl_with_speakers(
-    edl: EDL,
+def enrich_edl(
+    edl: NormalizedEDL,
     bound_timeline: Dict[str, Any],
-) -> EDL:
+) -> NormalizedEDL:
     """给 EDL 的 keep 段补说话人字段（in-place 修改并返回）。"""
     spk_segments = bound_timeline.get("segments", [])
     all_switches: List[Dict[str, Any]] = []
-    for seg in edl.segments:
+    for seg in edl.keep:
         main_spk, _n, switches = interval_speaker_stats(
             seg.source_start, seg.source_end, spk_segments)
         seg.speaker_id = main_spk
@@ -98,68 +95,49 @@ def enrich_edl_with_speakers(
     return edl
 
 
-# ---------------------------------------------------------------------------
-# 格式 2：judged/merged 旧格式（keep 列表）
-# ---------------------------------------------------------------------------
-def enrich_keep_list(
-    data: Dict[str, Any],
-    bound_timeline: Dict[str, Any],
-) -> Dict[str, Any]:
-    """给 {"keep": [{source_start, source_end, ...}]} 每项补说话人字段。
+def _load_input(raw_path: str) -> NormalizedEDL:
+    """读取输入并归一化为 v2 标准 EDL。
 
-    输出与输入同构（保留原字段），每项增加 speaker_id / dialogue_zoom；
-    顶层增加 speaker_switches 汇总。
+    - {"keep": [...]}（v2）→ 直接解析
+    - {"segments": [...]}（v1）→ 自动归一化
+    - [...]（judged 清单）→ 包装成 keep 格式（keep=True 项）
     """
-    spk_segments = bound_timeline.get("segments", [])
-    keeps = data.get("keep", [])
-    if not isinstance(keeps, list):
-        raise ValueError("输入缺少 keep 列表（旧格式）或 EDL 结构（新格式）")
-
-    all_switches: List[Dict[str, Any]] = []
-    for item in keeps:
-        main_spk, _n, switches = interval_speaker_stats(
-            float(item.get("source_start", 0.0)),
-            float(item.get("source_end", 0.0)),
-            spk_segments,
-        )
-        item["speaker_id"] = main_spk
-        item["dialogue_zoom"] = bool(switches)
-        all_switches.extend(switches)
-    data["speaker_switches"] = sorted(all_switches, key=lambda x: x["t"])
-    return data
+    raw = json.loads(Path(raw_path).read_text(encoding="utf-8"))
+    if isinstance(raw, dict):
+        return NormalizedEDL.from_dict(raw)
+    if isinstance(raw, list):
+        keeps = [k for k in raw if isinstance(k, dict) and k.get("keep")]
+        data = {"keep": keeps,
+                "source_duration_s": max((float(k.get("source_end", 0.0))
+                                          for k in keeps), default=0.0)}
+        return NormalizedEDL.from_dict(data)
+    raise ValueError(f"无法识别的 EDL 输入: {raw_path}（应为 dict 或 list）")
 
 
 # ---------------------------------------------------------------------------
 # CLI
 # ---------------------------------------------------------------------------
 def main() -> None:
-    ap = argparse.ArgumentParser(prog="enrich_edl.py", description="EDL/keep 说话人富化")
-    ap.add_argument("--edl", required=True, help="EDL JSON（判断层输出，两种格式皆可）")
+    ap = argparse.ArgumentParser(prog="enrich_edl.py", description="EDL 说话人富化")
+    ap.add_argument("--edl", required=True, help="EDL JSON（v2 keep 格式；兼容 v1 / judged 清单）")
     ap.add_argument("--speaker", required=True, help="bound_speaker_timeline.json")
     ap.add_argument("--out", default=None, help="输出路径（默认 <edl 同目录>_speaker.json）")
     args = ap.parse_args()
 
-    raw = json.loads(Path(args.edl).read_text(encoding="utf-8"))
+    edl = _load_input(args.edl)
     bound = json.loads(Path(args.speaker).read_text(encoding="utf-8"))
     out = args.out or str(Path(args.edl).with_name(Path(args.edl).stem + "_speaker.json"))
 
-    if isinstance(raw, dict) and "keep" in raw and isinstance(raw["keep"], list):
-        enriched = enrich_keep_list(raw, bound)
-    else:
-        edl = EDL.from_dict(raw)
-        enrich_edl_with_speakers(edl, bound)
-        enriched = edl.to_dict()
+    enrich_edl(edl, bound)
+    edl.save(out)
 
-    keeps = enriched.get("keep", enriched.get("segments", []))
-    Path(out).parent.mkdir(parents=True, exist_ok=True)
-    Path(out).write_text(json.dumps(enriched, ensure_ascii=False, indent=2),
-                         encoding="utf-8")
+    keeps = edl.keep
     print(json.dumps({
         "ok": True,
         "keep_segments": len(keeps),
-        "with_speaker": sum(1 for k in keeps if k.get("speaker_id") is not None),
-        "dialogue_zoom": sum(1 for k in keeps if k.get("dialogue_zoom")),
-        "speaker_switches": len(enriched.get("speaker_switches", [])),
+        "with_speaker": sum(1 for k in keeps if k.speaker_id is not None),
+        "dialogue_zoom": sum(1 for k in keeps if k.dialogue_zoom),
+        "speaker_switches": len(edl.speaker_switches),
         "out": out,
     }, ensure_ascii=False, indent=2))
 

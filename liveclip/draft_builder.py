@@ -16,7 +16,6 @@ from __future__ import annotations
 
 import json
 import os
-import shutil
 import subprocess
 import sys
 import uuid
@@ -27,6 +26,7 @@ import pyJianYingDraft as draft
 from pyJianYingDraft import trange
 from pyJianYingDraft import TextBorder, TextSegment, TextStyle, TextShadow
 
+from liveclip.config import find_ffmpeg
 from liveclip.styles import (
     SUBTITLE_FONT_SIZE_BY_RATIO,
     SUBTITLE_BORDER_COLOR,
@@ -51,25 +51,6 @@ CANVAS_SIZE = {
 # ---------------------------------------------------------------------------
 # 工具
 # ---------------------------------------------------------------------------
-def find_ffmpeg() -> str:
-    """优先系统 PATH，其次剪映自带。"""
-    p = shutil.which("ffmpeg")
-    if p:
-        return p
-    cands = [
-        Path(r"C:\MyApp\剪映JianyingPro 免V1P"),  # 用户实际使用的免V1P 版
-        Path(os.environ.get("LOCALAPPDATA", "")) / "JianyingPro" / "Apps",
-    ]
-    for c in cands:
-        if c.is_file():
-            return str(c)
-        if c.is_dir():
-            hit = next(c.rglob("ffmpeg.exe"), None)
-            if hit:
-                return str(hit)
-    raise RuntimeError("未找到 ffmpeg，请安装或提供路径")
-
-
 def to_mp4(video: Path, ffmpeg: str) -> Path:
     """TS 等格式无损转 MP4；已是 mp4 则原样返回。"""
     if video.suffix.lower() == ".mp4":
@@ -226,6 +207,8 @@ def build_draft_from_edl(
 
     # 素材转码（去重）
     ffmpeg = find_ffmpeg()
+    if not ffmpeg:
+        raise RuntimeError("未找到 ffmpeg，请安装或配置 ffmpeg_path")
     videos: Dict[str, Path] = {}
     for seg in segments:
         vp = seg.get("video")

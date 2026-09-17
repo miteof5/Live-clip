@@ -33,6 +33,14 @@ from typing import Any, Dict, List, Optional, Tuple
 import cv2
 import numpy as np
 
+try:  # 模块方式（from liveclip.visual_signal import ...）
+    from .config import find_ffmpeg
+except ImportError:  # 直接运行（python liveclip/visual_signal.py）
+    import sys as _sys
+    from pathlib import Path as _Path
+    _sys.path.insert(0, str(_Path(__file__).resolve().parent.parent))
+    from liveclip.config import find_ffmpeg
+
 Box = Tuple[int, int, int, int]  # (x1, y1, x2, y2)
 
 
@@ -437,19 +445,6 @@ def extract_face_signal(
 # ---------------------------------------------------------------------------
 # visual_events 整合：scdet + freezedetect（ffmpeg 子进程包装）
 # ---------------------------------------------------------------------------
-def find_ffmpeg() -> str:
-    """优先项目 tools/ffmpeg，其次 PATH。"""
-    proj = Path(__file__).resolve().parent.parent
-    local = proj / "tools" / "ffmpeg" / "ffmpeg.exe"
-    if local.is_file():
-        return str(local)
-    import shutil
-    p = shutil.which("ffmpeg")
-    if p:
-        return p
-    raise RuntimeError("未找到 ffmpeg")
-
-
 def extract_scene_changes(
     video_path: str,
     *,

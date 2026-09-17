@@ -1,8 +1,13 @@
 # doubao-live-clip 架构设计
 
-> 状态：设计定稿（v1）
-> 目标：直播切片自动剪辑系统 —— 输入 5~60min 原始视频，输出 30s~10min "尽量完美的半成品"剪映草稿，用户剪映精修收尾。
-> 判断层由豆包承担（不调外部 LLM API），工具层为本地 Python 项目（pyJianYingDraft 生成剪映草稿）。
+> 状态：设计愿景（部分已实现）。
+> - **已实现**：probe / preprocess / transcribe / merge / EDL（v2 keep 格式）/ draft_builder 渲染 /
+>   说话人维度（diarization + visual_signal + binding + enrich_edl）。见 `README.md` / `AGENTS.md`。
+> - **规划中（本文档描述，尚未实现）**：`rules/` 规则集、`judge.py` 豆包适配器、段标签
+>   （mode/effects/speakers/speed）驱动的渲染、dialogue_zoom 关键帧注入。
+> - **EDL 现状**：对外唯一标准为 **v2 keep 格式**（`{"keep": [...]}`，见 §4.1），
+>   旧版 `{"segments": [...]}` 仅可读入。
+> - 判断层由豆包承担（不调外部 LLM API），工具层为本地 Python 项目（pyJianYingDraft 生成剪映草稿）。
 
 ---
 
@@ -86,18 +91,25 @@ doubao-live-clip/
 
 ## 4. EDL 数据模型（扩展：段标签体系）
 
-### 4.1 现状（M1 已实现）
+### 4.1 现状（M1 已实现，v2 唯一标准）
 
 ```json
 {
-  "source_path": "...", "title": "live-clip",
-  "width": 1920, "height": 1080, "source_duration_s": 249.68, "fps": 60,
-  "segments": [
-    {"kind": "keep", "source_start": 0.0, "source_end": 5.2, "reason": "...", "is_golden": false, "text": "..."},
-    {"kind": "cut",  "source_start": 5.2, "source_end": 7.0, "reason": "气口"}
-  ]
+  "keep": [
+    {"source_start": 0.0, "source_end": 12.5, "target_start": 0.0, "duration": 12.5,
+     "video": "D:/input.mp4", "reason": "开场金句", "is_golden": true,
+     "text": "...", "speaker_id": 1, "dialogue_zoom": false},
+    {"source_start": 12.5, "source_end": 20.0, "target_start": 12.5, "duration": 7.5}
+  ],
+  "cut": [{"start": 20.0, "end": 22.0, "reason": "气口停顿"}],
+  "target_duration": 20.0,
+  "source_path": "D:/input.mp4", "width": 1920, "height": 1080,
+  "source_duration_s": 3600.0, "fps": 30, "title": "切片标题"
 }
 ```
+
+数据模型：`liveclip.edl.NormalizedEDL`（keep 段列表 + 校验 + 源↔目标映射 + 序列化）。
+旧版 `{"source_path", "segments":[{"kind":"keep|cut"}]}` 仅可读入自动归一化，不再产出。
 
 ### 4.2 扩展（M2/M3 段标签）
 

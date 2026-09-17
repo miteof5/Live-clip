@@ -14,9 +14,15 @@
 from __future__ import annotations
 
 import json
+import sys
 from pathlib import Path
 
-OUT = Path(__file__).resolve().parent.parent / "outputs" / "work" / "rongyiming"
+# 允许从项目根直接运行 scripts/judge_clips.py
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+
+from liveclip.config import load_config, output_dir  # noqa: E402
+
+OUT = output_dir(load_config()) / "work" / "rongyiming"  # 输出目录统一走 config.json
 
 # ---------- 判断区间表 ----------
 # (start, end, keep, reason, silent?)  秒；silent=True 表示保留时段但无台词（留白/氛围，不出字幕）
