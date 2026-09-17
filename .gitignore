@@ -17,3 +17,12 @@ chunks/
 
 # 剪映草稿输出
 drafts/
+
+# 二进制工具（体积大，不入版本库；文件保留在本地，README 说明获取方式）
+tools/ffmpeg/*.exe
+tools/jy-draftc.exe
+
+# Python 缓存与测试产物
+.pytest_cache/
+.coverage
+htmlcov/
