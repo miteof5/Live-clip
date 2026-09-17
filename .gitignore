@@ -22,6 +22,9 @@ drafts/
 tools/ffmpeg/*.exe
 tools/jy-draftc.exe
 
+# 测试素材（数百 MB 级视频文件，不入库；可用自己的直播录像测试）
+assets/samples/
+
 # Python 缓存与测试产物
 .pytest_cache/
 .coverage
