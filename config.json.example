@@ -1,0 +1,67 @@
+{
+  "asr": {
+    "active": [
+      "bailian-qwen3-flash-2025-09-08",
+      "bailian-qwen3-flash-2026-02-10",
+      "bailian-qwen-audio-asr",
+      "siliconflow-whisper"
+    ],
+    "backends": [
+      {
+        "name": "bailian-qwen3-flash-2025-09-08",
+        "provider": "bailian",
+        "api_mode": "native",
+        "base_url": "https://dashscope.aliyuncs.com/api/v1/services/aigc/multimodal-generation/generation",
+        "api_key": "",
+        "api_key_env": "DASHSCOPE_API_KEY",
+        "model": "qwen3-asr-flash-2025-09-08",
+        "max_seconds": 300,
+        "max_mb": 9,
+        "language": "zh"
+      },
+      {
+        "name": "bailian-qwen3-flash-2026-02-10",
+        "provider": "bailian",
+        "api_mode": "native",
+        "base_url": "https://dashscope.aliyuncs.com/api/v1/services/aigc/multimodal-generation/generation",
+        "api_key": "",
+        "api_key_env": "DASHSCOPE_API_KEY",
+        "model": "qwen3-asr-flash-2026-02-10",
+        "max_seconds": 300,
+        "max_mb": 9,
+        "language": "zh"
+      },
+      {
+        "name": "bailian-qwen-audio-asr",
+        "provider": "bailian",
+        "api_mode": "native",
+        "base_url": "https://dashscope.aliyuncs.com/api/v1/services/aigc/multimodal-generation/generation",
+        "api_key": "",
+        "api_key_env": "DASHSCOPE_API_KEY",
+        "model": "qwen-audio-3.0-asr-flash",
+        "max_seconds": 300,
+        "max_mb": 9,
+        "language": "zh"
+      },
+      {
+        "name": "siliconflow-whisper",
+        "provider": "siliconflow",
+        "api_mode": "openai",
+        "base_url": "https://api.siliconflow.cn/v1",
+        "api_key": "",
+        "api_key_env": "SILICONFLOW_API_KEY",
+        "model": "FunAudioLLM/Whisper-large-v3-turbo",
+        "max_seconds": 600,
+        "max_mb": 50,
+        "language": "zh"
+      }
+    ]
+  },
+  "ffmpeg_path": "",
+  "ffprobe_path": "",
+  "draft_folder": "",
+  "output_dir": "outputs",
+  "silence_noise_db": -30.0,
+  "silence_min_duration": 0.8,
+  "chunk_max_seconds": 600
+}

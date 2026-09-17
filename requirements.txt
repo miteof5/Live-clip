@@ -1,0 +1,4 @@
+requests>=2.31
+pyJianYingDraft>=0.3.0
+pymediainfo>=2.3
+opencv-python-headless==4.10.0.84  # 视觉信号层：人脸框检测（5.x 移除了 CascadeClassifier，勿升）

@@ -1,0 +1,19 @@
+# 配置与密钥
+config.json
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+*.egg-info/
+dist/
+build/
+
+# 中间产物
+outputs/
+work/
+chunks/
+
+# 剪映草稿输出
+drafts/
