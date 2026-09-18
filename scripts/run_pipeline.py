@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 import sys
 from pathlib import Path
 
@@ -25,6 +26,11 @@ from liveclip.make_draft import DraftOptions, make_draft  # noqa: E402
 from liveclip.merge_words import merge_to_phrases, save_srt  # noqa: E402
 from liveclip.preprocess import Silence, detect_silence, extract_audio  # noqa: E402
 from liveclip.probe import probe_media  # noqa: E402
+from liveclip.storyboard import (  # noqa: E402
+    build_storyboard,
+    build_visual_timeline,
+    save_storyboard,
+)
 from liveclip.transcribe import save_transcript, transcribe_audio, transcribe_with_backends  # noqa: E402
 
 
@@ -185,6 +191,40 @@ def cmd_draft(args) -> int:
         return 1
 
 
+def cmd_storyboard(args) -> int:
+    """图文分镜：内容感知抽帧 +（可选）VL 帧描述 + 视觉上下文时间轴。"""
+    conf = _load_cfg(args)
+    outdir = cfg.output_dir(conf) / "work" / "storyboard"
+    outdir.mkdir(parents=True, exist_ok=True)
+    try:
+        sb = build_storyboard(
+            args.video, budget=args.budget, describe=args.describe,
+            cfg=conf, max_candidates=args.max_candidates)
+        safe = re.sub(r"[^\w\-]", "_", Path(args.video).stem)
+        out = str(outdir / f"{safe}_b{args.budget}.json")
+        save_storyboard(sb, out)
+        timeline_out = None
+        if args.timeline:
+            if not (sb.get("frames") and sb["frames"][0].get("desc")):
+                raise RuntimeError("--timeline 需要已描述的 storyboard（请加 --describe）")
+            tl = build_visual_timeline(sb)
+            timeline_out = str(Path(out).with_name(Path(out).stem + "_timeline.json"))
+            save_storyboard(tl, timeline_out)
+        print(json.dumps({
+            "ok": True,
+            "storyboard_json": out,
+            "visual_timeline_json": timeline_out,
+            "duration": sb.get("duration"),
+            "budget": sb.get("budget"),
+            "frames": len(sb.get("frames", [])),
+            "described": bool(sb.get("frames") and sb["frames"][0].get("desc")),
+        }, ensure_ascii=False))
+        return 0
+    except Exception as e:  # noqa: BLE001
+        print(json.dumps({"ok": False, "error": str(e)}, ensure_ascii=False))
+        return 1
+
+
 def main(argv=None) -> int:
     parser = argparse.ArgumentParser(prog="doubao-live-clip", description="直播切片自动剪辑工具层")
     parser.add_argument("--config", default=None, help="config.json 路径（默认项目根）")
@@ -210,6 +250,14 @@ def main(argv=None) -> int:
     p_mg.add_argument("--max-gap", type=float, default=0.3)
     p_mg.add_argument("--max-chars", type=int, default=24)
     p_mg.set_defaults(func=cmd_merge)
+
+    p_sb = sub.add_parser("storyboard", help="图文分镜：内容感知抽帧 + VL 描述 + 视觉上下文时间轴")
+    p_sb.add_argument("--video", required=True)
+    p_sb.add_argument("--budget", type=int, default=120)
+    p_sb.add_argument("--describe", action="store_true", help="调用 VL 生成帧描述（需 DASHSCOPE_API_KEY）")
+    p_sb.add_argument("--timeline", action="store_true", help="生成视觉上下文时间轴（需已描述）")
+    p_sb.add_argument("--max-candidates", type=int, default=360)
+    p_sb.set_defaults(func=cmd_storyboard)
 
     p_dr = sub.add_parser("draft", help="EDL → 剪映草稿")
     p_dr.add_argument("--edl", required=True)

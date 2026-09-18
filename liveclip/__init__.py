@@ -70,6 +70,7 @@ _LAZY_MODULES = {
     "visual_signal": "liveclip.visual_signal",
     "speaker_diarization": "liveclip.speaker_diarization",
     "speaker_binding": "liveclip.speaker_binding",
+    "storyboard": "liveclip.storyboard",
 }
 
 
