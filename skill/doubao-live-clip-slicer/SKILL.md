@@ -9,7 +9,7 @@ description: 直播切片自动剪辑助手。当用户要求剪辑直播录像�
 
 你是**剪辑执行者**：用户（导演）决定剪什么，你负责转写、判断辅助、机械执行——把原始直播视频变成"尽量完美的半成品"剪映草稿。
 
-- **判断层（你）**：读词级转写 + 视觉证据（visual_timeline.json），按剪法规则产出 EDL 决策（留/剪/标签/静默留白）
+- **判断层（你）**：读词级转写 + 视觉证据（visual_timeline.json）+ 音频事件（audio_events.json），按剪法规则产出 EDL 决策（留/剪/标签/静默留白）
 - **渲染层（项目）**：draft_builder 按 EDL 机械渲染草稿，样式全在 styles.py
 - 两层只通过 **EDL JSON** 通信，互不依赖
 
@@ -76,9 +76,29 @@ ASR 选型（**踩坑记录，勿用错模型**）：
 - **画面文字必须用 `{"image": data_uri}` 字典格式**（字符串格式图片不会真正附加，模型会编造幻觉描述）。
 - 视频 >30min：先按幕表粗筛候选段，再对候选段补帧（勿整片 120 帧硬抽）。
 
+### Step 3.6 音频事件信号（规则层，零成本，强烈建议）
+
+ASR 把音频压成文字丢了副语言信息，而"炸点"高度依赖笑声/惊呼/BGM 起落。规则层先零成本筛出线索，判断层再对犹豫段直听：
+
+```powershell
+# 1) 规则层：burst 能量爆发 / 语速突变 / 静音前能量峰
+.venv\Scripts\python.exe scripts\run_pipeline.py audio_events --audio outputs\work\audio.wav --words outputs\work\words.json --silences outputs\work\silences.json
+# → outputs\work\audio_events.json（events[]: {t, end, type, score, detail}）
+
+# 2) 直听（判断层对犹豫段按需调用，一次约几分钱）
+.venv\Scripts\python.exe scripts\run_pipeline.py listen --audio outputs\work\audio.wav --from 30 --to 36
+# → outputs\work\listen_probes.json（每段 {laughs, applause, shouts, music, speech, excitement, description}）
+# 或 --events audio_events.json --max 8 自动取 top 事件段直听
+```
+
+- 事件类型：`burst`（能量突增=笑声/惊呼/掌声/爆点）、`speech_rate_jump`（语速陡增=兴奋/金句密集，骤降=冷场）、`pre_silence_peak`（静音前能量峰=反应后冷场）
+- 直听模型：qwen3.5-omni-flash（config.json `listen.model`；**注意模型名是 `qwen3.5-omni-flash`/`qwen3.5-omni-plus`，没有裸 `qwen3.5-omni`**）
+- 音频元素用 `{"audio": "data:;base64,..."}`（与 VL 的 `{"image":...}` 同接口族）
+- 直听仅限 3-10s 片段（config `listen.max_seconds`），Base64 ≤10MB
+
 ### Step 4 判断层（你干活的地方）
 
-读 `words.json`/`phrases.json` 的词级时间戳 + 静音信息 + **visual_timeline.json（如有）**，按**剪法规则**做决策：
+读 `words.json`/`phrases.json` 的词级时间戳 + 静音信息 + **visual_timeline.json / audio_events.json（如有）**，按**剪法规则**做决策：
 
 1. **主题相关性 > 搞笑性**：与主题无关的观众互动/操作吐槽，再好笑也不留
 2. **无语境长留白不留**：>5s 沉默删除（直播间冷场切片观众看不懂）
@@ -96,6 +116,13 @@ ASR 选型（**踩坑记录，勿用错模型**）：
 - **瞬时弹幕/礼物（`danmaku`/`gifts`）不作判据**：多数直播画面没有弹幕区/礼物栏（P1/P2 的桌面截图是特例），且 OCR 是抽样，漏读是常态——出现时可作辅助参考，不构成保留/剪掉的依据
 - 与 ASR 交叉验证：画面文字（横幅/海报/评论区）不是语音，转写里没有，只有 visual_timeline 能看到
 - 幕太粗时按条目 `t` 定位具体时刻，再回 storyboard 逐帧看细节
+
+**音频证据判据（audio_events.json 存在时，补副语言信息）**：
+- **pre_silence_peak + 长静音 = 留白判据**：`pre_silence_peak`（静音前能量峰）表示"反应（笑声/惊呼）→ 突然安静"，是名场面留白/冷场的强信号（已实测：P2 奶蛙脸冷场 29.5s、冷场延续 59.95s 均被精确标出）——配合 `silences.json` 判断留白该不该留
+- **burst + 语速陡增重叠 = 炸点候选**：`burst`（能量爆发）与 `speech_rate_jump`（语速陡增）时间重叠区 = 情绪高潮/金句密集区，与转写内容互证后决定保留
+- **BGM 区 = 歌声/幻听判别**：长段低能量平稳（burst 稀疏）+ 直听 `music=true, speech=false` = 音乐段（歌声可留作结尾）；若 ASR 在此区转出"歌词"而直听确认是歌声，是资产不是幻听
+- **直听触发**：判断层对"这段到底有没有梗/有没有冷场/是不是歌声"拿不准时，用 `listen` 直听 3-10s，读 `laughs/applause/shouts/music/speech/excitement`——一次几分钱，只探犹豫段
+- 与视觉互补：画面（弹幕反应）+ 音频（笑声/情绪）两路独立证据都指向同一段 = 高置信；一路缺失不构成反证（画面型冷场可能无音频笑声，反之亦然）
 
 产出 EDL（**唯一标准 v2 格式**）：
 ```json

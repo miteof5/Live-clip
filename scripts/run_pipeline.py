@@ -21,7 +21,9 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from liveclip import config as cfg  # noqa: E402
+from liveclip.audio_events import build_audio_events, save_audio_events  # noqa: E402
 from liveclip.edl import NormalizedEDL  # noqa: E402
+from liveclip.listen_probe import probe_segments  # noqa: E402
 from liveclip.make_draft import DraftOptions, make_draft  # noqa: E402
 from liveclip.merge_words import merge_to_phrases, save_srt  # noqa: E402
 from liveclip.preprocess import Silence, detect_silence, extract_audio  # noqa: E402
@@ -225,6 +227,60 @@ def cmd_storyboard(args) -> int:
         return 1
 
 
+def cmd_audio_events(args) -> int:
+    """音频事件信号：burst 能量爆发 / 语速突变 / 静音前能量峰（规则层，零成本）。"""
+    conf = _load_cfg(args)
+    outdir = cfg.output_dir(conf) / "work"
+    outdir.mkdir(parents=True, exist_ok=True)
+    try:
+        ev = build_audio_events(args.audio, args.words, args.silences, cfg=conf)
+        safe = re.sub(r"[^\w\-]", "_", Path(args.audio).stem)
+        out = args.out or str(outdir / f"{safe}_audio_events.json")
+        save_audio_events(ev, out)
+        print(json.dumps({
+            "ok": True,
+            "audio_events_json": out,
+            "duration": ev["duration"],
+            "counts": ev["counts"],
+            "total_events": len(ev["events"]),
+        }, ensure_ascii=False))
+        return 0
+    except Exception as e:  # noqa: BLE001
+        print(json.dumps({"ok": False, "error": str(e)}, ensure_ascii=False))
+        return 1
+
+
+def cmd_listen(args) -> int:
+    """候选段直听：Omni 音频理解（按需付费，只探犹豫段）。"""
+    conf = _load_cfg(args)
+    segments: list[tuple[float, float]] = []
+    if args.t0 is not None:
+        if args.t1 is None:
+            print(json.dumps({"ok": False, "error": "--from 需配 --to"}, ensure_ascii=False))
+            return 1
+        segments.append((args.t0, args.t1))
+    elif args.events:
+        ev = json.loads(Path(args.events).read_text(encoding="utf-8"))
+        events = sorted(ev.get("events", []), key=lambda e: e.get("score", 0), reverse=True)[: args.max]
+        for e in events:
+            t = float(e.get("t", 0))
+            segments.append((max(0.0, t - 2.0), t + 4.0))
+    else:
+        print(json.dumps({"ok": False, "error": "需要 --from/--to 或 --events"}, ensure_ascii=False))
+        return 1
+    try:
+        res = probe_segments(args.audio, segments, cfg=conf, max_seconds=conf.get("listen", {}).get("max_seconds", 10))
+        safe = re.sub(r"[^\w\-]", "_", Path(args.audio).stem)
+        out = args.out or str(cfg.output_dir(conf) / "work" / f"{safe}_listen_probes.json")
+        Path(out).parent.mkdir(parents=True, exist_ok=True)
+        Path(out).write_text(json.dumps(res, ensure_ascii=False, indent=1), encoding="utf-8")
+        print(json.dumps({"ok": True, "probes": len(res["probes"]), "out": out}, ensure_ascii=False))
+        return 0
+    except Exception as e:  # noqa: BLE001
+        print(json.dumps({"ok": False, "error": str(e)}, ensure_ascii=False))
+        return 1
+
+
 def main(argv=None) -> int:
     parser = argparse.ArgumentParser(prog="doubao-live-clip", description="直播切片自动剪辑工具层")
     parser.add_argument("--config", default=None, help="config.json 路径（默认项目根）")
@@ -258,6 +314,22 @@ def main(argv=None) -> int:
     p_sb.add_argument("--timeline", action="store_true", help="生成视觉上下文时间轴（需已描述）")
     p_sb.add_argument("--max-candidates", type=int, default=360)
     p_sb.set_defaults(func=cmd_storyboard)
+
+    p_ae = sub.add_parser("audio_events", help="音频事件信号（规则层，零成本）")
+    p_ae.add_argument("--audio", required=True, help="音频 wav（16kHz 单声道）")
+    p_ae.add_argument("--words", required=True, help="词级转写 words.json")
+    p_ae.add_argument("--silences", default=None, help="静音段 silences.json（可选）")
+    p_ae.add_argument("--out", default=None, help="输出 audio_events.json 路径")
+    p_ae.set_defaults(func=cmd_audio_events)
+
+    p_ls = sub.add_parser("listen", help="候选段直听（Omni 音频理解，按需）")
+    p_ls.add_argument("--audio", required=True, help="音频 wav（16kHz 单声道）")
+    p_ls.add_argument("--from", dest="t0", type=float, default=None, help="直听起点（秒）")
+    p_ls.add_argument("--to", dest="t1", type=float, default=None, help="直听终点（秒）")
+    p_ls.add_argument("--events", default=None, help="audio_events.json：自动取 top N 事件段直听")
+    p_ls.add_argument("--max", type=int, default=8, help="--events 模式最多直听段数")
+    p_ls.add_argument("--out", default=None, help="输出 listen_probes.json 路径")
+    p_ls.set_defaults(func=cmd_listen)
 
     p_dr = sub.add_parser("draft", help="EDL → 剪映草稿")
     p_dr.add_argument("--edl", required=True)

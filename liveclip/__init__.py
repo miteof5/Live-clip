@@ -71,6 +71,8 @@ _LAZY_MODULES = {
     "speaker_diarization": "liveclip.speaker_diarization",
     "speaker_binding": "liveclip.speaker_binding",
     "storyboard": "liveclip.storyboard",
+    "audio_events": "liveclip.audio_events",
+    "listen_probe": "liveclip.listen_probe",
 }
 
 
