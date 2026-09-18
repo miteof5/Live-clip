@@ -33,6 +33,7 @@ from liveclip.storyboard import (  # noqa: E402
     build_visual_timeline,
     save_storyboard,
 )
+from liveclip.story_map import build_story_map, save_story_map  # noqa: E402
 from liveclip.transcribe import save_transcript, transcribe_audio, transcribe_with_backends  # noqa: E402
 
 
@@ -281,6 +282,36 @@ def cmd_listen(args) -> int:
         return 1
 
 
+def cmd_story_map(args) -> int:
+    """叙事简报合成器：5 路信号时间对齐 → 幕级 story_map_raw.json（零成本）。"""
+    try:
+        sm = build_story_map(
+            args.phrases,
+            visual_timeline_path=args.visual_timeline,
+            audio_events_path=args.audio_events,
+            speakers_path=args.speakers,
+            silences_path=args.silences,
+            listen_probes_path=args.listen,
+            duration_hint=args.duration,
+        )
+        out = args.out or str(Path(args.phrases).with_name("story_map_raw.json"))
+        save_story_map(sm, out)
+        print(json.dumps({
+            "ok": True,
+            "story_map_json": out,
+            "duration": sm["duration"],
+            "acts": len(sm["acts"]),
+            "lull_regions": len(sm["global"].get("lull_regions", [])),
+            "bgm_regions": len(sm["global"].get("bgm_regions", [])),
+            "high_emotion_regions": len(sm["global"].get("high_emotion_regions", [])),
+            "long_silences": len(sm["global"].get("long_silences", [])),
+        }, ensure_ascii=False))
+        return 0
+    except Exception as e:  # noqa: BLE001
+        print(json.dumps({"ok": False, "error": str(e)}, ensure_ascii=False))
+        return 1
+
+
 def main(argv=None) -> int:
     parser = argparse.ArgumentParser(prog="doubao-live-clip", description="直播切片自动剪辑工具层")
     parser.add_argument("--config", default=None, help="config.json 路径（默认项目根）")
@@ -330,6 +361,17 @@ def main(argv=None) -> int:
     p_ls.add_argument("--max", type=int, default=8, help="--events 模式最多直听段数")
     p_ls.add_argument("--out", default=None, help="输出 listen_probes.json 路径")
     p_ls.set_defaults(func=cmd_listen)
+
+    p_sm = sub.add_parser("story_map", help="叙事简报：5 路信号时间对齐 → 幕级 story_map_raw.json")
+    p_sm.add_argument("--phrases", required=True, help="phrases.json 或 words.json（必需）")
+    p_sm.add_argument("--visual-timeline", default=None, help="visual_timeline.json（幕骨架，推荐）")
+    p_sm.add_argument("--audio-events", default=None, help="audio_events.json（可选）")
+    p_sm.add_argument("--speakers", default=None, help="speaker_timeline.json / bound_speaker_timeline.json（可选）")
+    p_sm.add_argument("--silences", default=None, help="silences.json（可选）")
+    p_sm.add_argument("--listen", default=None, help="listen_probes.json（可选，提供幕级直听情绪）")
+    p_sm.add_argument("--duration", type=float, default=None, help="素材时长（秒，无视觉且短语未覆盖结尾时用）")
+    p_sm.add_argument("--out", default=None, help="输出 story_map_raw.json 路径")
+    p_sm.set_defaults(func=cmd_story_map)
 
     p_dr = sub.add_parser("draft", help="EDL → 剪映草稿")
     p_dr.add_argument("--edl", required=True)

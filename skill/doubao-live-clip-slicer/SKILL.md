@@ -9,7 +9,7 @@ description: 直播切片自动剪辑助手。当用户要求剪辑直播录像�
 
 你是**剪辑执行者**：用户（导演）决定剪什么，你负责转写、判断辅助、机械执行——把原始直播视频变成"尽量完美的半成品"剪映草稿。
 
-- **判断层（你）**：读词级转写 + 视觉证据（visual_timeline.json）+ 音频事件（audio_events.json），按剪法规则产出 EDL 决策（留/剪/标签/静默留白）
+- **判断层（你）**：先通读全局（story_map_raw.json），再读词级转写 + 视觉证据（visual_timeline.json）+ 音频事件（audio_events.json），按剪法规则产出 EDL 决策（留/剪/标签/静默留白）
 - **渲染层（项目）**：draft_builder 按 EDL 机械渲染草稿，样式全在 styles.py
 - 两层只通过 **EDL JSON** 通信，互不依赖
 
@@ -96,9 +96,29 @@ ASR 把音频压成文字丢了副语言信息，而"炸点"高度依赖笑声/�
 - 音频元素用 `{"audio": "data:;base64,..."}`（与 VL 的 `{"image":...}` 同接口族）
 - 直听仅限 3-10s 片段（config `listen.max_seconds`），Base64 ≤10MB
 
+### Step 3.7 叙事简报（强烈建议——判断层"先读全局再挑片"的输入）
+
+把 5 路信号（转写/视觉幕/音频事件/说话人/静音）时间对齐成**幕级叙事简报**，判断层先通读全局、产出故事地图，再在地图上选段（不是逐句扫"哪句好笑"）：
+
+```powershell
+.venv\Scripts\python.exe scripts\run_pipeline.py story_map --phrases outputs\work\phrases.json `
+  --visual-timeline outputs\work\storyboard\<名>_b120_described_timeline.json `
+  --audio-events outputs\work\audio_events.json --silences outputs\work\silences.json `
+  [--speakers speaker_timeline.json] [--listen listen_probes.json]
+# → outputs\work\story_map_raw.json（global + acts[]）
+```
+
+- 每幕 `acts[i]`：`start/end/layout/visual/ui_text/danmaku/text(≤200字)/speakers/audio/bursts/rate_jumps/pre_silence_peaks/longest_silence/emotion(0-1)/cold_start`——幕级转写摘要+视觉+音频+说话人一次通读
+- `global`：`lull_regions`（反应后冷场/长静音，留白判据）、`bgm_regions`（低能量非冷场，需 listen 确认歌声）、`high_emotion_regions`（emotion≥0.3 且 burst≥2）、`long_silences`（>5s）
+- 幕骨架取 visual_timeline，但**自动整形**：长幕按 pre_silence_peak/长静音切分（冷场独立成幕）、碎幕按布局抖动合并（VL 布局噪声，混合布局标 `mixed`）
+- 说话人/直听为可选输入：有则挂载（幕内活跃 speaker、幕级 excitement），无则降级（判断层按降级形态通读，不中断）
+- 无 `--visual-timeline` 时建议传 `--duration <素材全长秒>`：ASR 判静音可能提前停，尾部静音/BGM 区靠它兜底（代码已自动取各信号最大 end，但显式最稳）
+
 ### Step 4 判断层（你干活的地方）
 
-读 `words.json`/`phrases.json` 的词级时间戳 + 静音信息 + **visual_timeline.json / audio_events.json（如有）**，按**剪法规则**做决策：
+**先读全局、再挑片**：有 `story_map_raw.json` 先通读全局（局/人物/包袱链/情绪曲线/留白），在地图上圈 1-3 个叙事弧，弧内再用剪法规则细剪；无简报则先做时间对齐再读散装信号，不得跳过"先全局后局部"。
+
+读 `words.json`/`phrases.json` 的词级时间戳 + 静音信息 + **visual_timeline.json / audio_events.json / story_map_raw.json（如有）**，按**剪法规则**做决策：
 
 1. **主题相关性 > 搞笑性**：与主题无关的观众互动/操作吐槽，再好笑也不留
 2. **无语境长留白不留**：>5s 沉默删除（直播间冷场切片观众看不懂）
@@ -108,6 +128,13 @@ ASR 把音频压成文字丢了副语言信息，而"炸点"高度依赖笑声/�
 6. **短句字幕**：4-10 字跟读式（不要整句长字幕）
 7. **BGM 不用管**（用户自己加）；**标题每期必有**（主题标题贯穿全程）
 8. 花字（可选）：`(吐槽)` 弹幕式，替观众说话
+
+**叙事弧判据（story_map_raw.json 存在时，弧级选段）**：
+- **先答四问再动手**：这是什么局？谁对谁（连麦看 `speakers`+布局）？包袱链在哪几个幕（铺垫→抖）？情绪在哪爆/哪冷（`emotion`/`high_emotion_regions`/`lull_regions`）？
+- **地图选弧而非挑句**：keep 优先选"完整叙事弧"（如铺垫幕+包袱幕+反应幕），弧内再细剪；EDL 的 keep `reason` 标注故事角色（如"b3 包袱：铺垫展示→抖包袱"）
+- **`lull_regions`/`cold_start` = 留白判据**：反应（能量峰）后冷场，配合 `silences.json` 判断留白该不该留
+- **`bgm_regions` = 结尾候选**：低能量非冷场区，需 `listen` 确认 music=true 后按规则 3/5 用作音乐收尾
+- **`high_emotion_regions` = 金句/开场候选**：与转写互证后选开场 3 秒或中段高潮
 
 **视觉证据判据（storyboard 产物存在时，用 visual_timeline.json 补充文字转写看不到的信息）**：
 - **画面内容 = 主判据**：每幕 `content`（人物/动作/显著物体）回答"这段画面在干什么"——口播（画面静止/单画面）vs 展示/操作（画面内容变化）。连麦、看 AI 图、展示软件、翻相册等纯画面动作只有视觉能看到，据此判断"这段在干嘛"再决定留剪
